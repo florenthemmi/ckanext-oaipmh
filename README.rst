@@ -10,7 +10,10 @@ Harvester
 The steps to install harvester, add the extension name 'oaipmh_harvester'
 to the configuration option 'ckan.plugins' of the CKAN ini file in use.
 
-After this restart CKAN. Then navigate to '/harvest', add a harvesting source.
+In any case, you should already have "harvest ckan_harvester" in the configuration option.
+
+After this restart CKAN. Then navigate to '/harvest' to see your existing harvest sources.
+Navigate to '/harvest/new' to add a new harvesting source.
 For this source do:
   * Fill in URL to a OAI-PMH repository.
   * Select 'Source Type' to be 'OAI-PMH'.
@@ -25,6 +28,18 @@ via a the paster commands.
 This is clearly documented in ckanext-harvest extension, see it here:
 
  https://github.com/okfn/ckanext-harvest/blob/master/README.rst
+
+Please note that this fork work with the latest version of `CKAN <https://github.com/okfn/ckan>`_ (tested with v2.2a) and `CKAN harvester <https://github.com/okfn/ckanext-harvest>`_.
+
+As documented in the code, resource type for a dataset is now automatically detected.
+The following formats are supported by CKAN and are implemented in the OAI-PMH harvester: "rdf", "pdf", "api", "zip", "xls", "csv", "txt", "xml", "json" and "html".
+In CKAN harvester, all unknown resource type use the "data" format for displaying purposes.
+
+This plugin use "html" for the default format of a resource (if not found).
+To be recognized, the format need to be at the end of the resource. For example:
+* `http://my.data.com/my-generated-resource?csv <http://my.data.com/my-generated-resource?csv>`_
+* `http://my.data.com/my-generated-resource?format=csv <http://my.data.com/my-generated-resource?format=csv>`_
+* `http://my.data.com/my-resource.csv <http://my.data.com/my-resource.csv>`_
 
 Interface
 ---------
