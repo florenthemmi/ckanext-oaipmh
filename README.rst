@@ -37,6 +37,7 @@ In CKAN harvester, all unknown resource type use the "data" format for displayin
 
 This plugin use "html" for the default format of a resource (if not found).
 To be recognized, the format need to be at the end of the resource. For example:
+
 * `http://my.data.com/my-generated-resource?csv <http://my.data.com/my-generated-resource?csv>`_
 * `http://my.data.com/my-generated-resource?format=csv <http://my.data.com/my-generated-resource?format=csv>`_
 * `http://my.data.com/my-resource.csv <http://my.data.com/my-resource.csv>`_
