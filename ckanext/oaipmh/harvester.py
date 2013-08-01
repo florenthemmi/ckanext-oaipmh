@@ -17,7 +17,7 @@ import httplib
 from ckan.model import Session, Package, Group, Member
 from ckan import model
 
-from ckanext.harvest.harvesters.base import HarvesterBase, GatherFailure
+from ckanext.harvest.harvesters.base import HarvesterBase
 from ckanext.harvest.model import HarvestObject, HarvestJob
 from ckan.model.authz import setup_default_user_roles
 from ckan.lib import helpers as h
@@ -29,8 +29,9 @@ from oaipmh.error import NoSetHierarchyError, NoRecordsMatchError
 from oaipmh.error import XMLSyntaxError
 from oaipmh import common
 
-from ckanext.harvest.harvesters.retry import HarvesterRetry
 from dataconverter import oai_dc2ckan
+from gather_failure import GatherFailure
+from retry import HarvesterRetry
 
 log = logging.getLogger(__name__)
 
@@ -348,7 +349,6 @@ class OAIPMHHarvester(HarvesterBase):
                 info['from_'] = self._str_from_datetime(from_until['from_'])
             if 'until' in from_until:
                 info['until'] = self._str_from_datetime(from_until['until'])
-            store_times(info, from_until)
             harvest_obj.content = json.dumps(info)
             harvest_obj.save()
             harvest_objs.append(harvest_obj.id)

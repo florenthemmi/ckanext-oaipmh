@@ -18,9 +18,7 @@ from ckan.model.authz import setup_default_user_roles
 from ckan.model.license import LicenseRegister, LicenseOtherPublicDomain
 from ckan.model.license import LicenseOtherClosed, LicenseNotSpecified
 from ckan.controllers.storage import BUCKET, get_ofs
-from ckanext.kata.utils import label_list_yso
 
-#from ckan.lib.munge import munge_tag
 from lxml import etree
 
 import pprint
@@ -205,11 +203,7 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
         for tag in metadata.get(s, []):
             # Turn each subject or type field into it's own tag.
             tagi = tag.strip()
-            if tagi.startswith('http://www.yso.fi'):
-                tags = label_list_yso(tagi)
-                extras['tag_source_%i' % idx] = tagi
-                idx += 1
-            elif tagi.startswith('http://') or tagi.startswith('https://'):
+            if tagi.startswith('http://') or tagi.startswith('https://'):
                 extras['tag_source_%i' % idx] = tagi
                 idx += 1
                 tags = [] # URL tags break links in UI.
@@ -217,7 +211,6 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
                 tags = [ tagi ]
             for tagi in tags:
                 tagi = tagi[:100] # 100 char limit in DB.
-                #tagi = munge_tag(tagi[:100]) # 100 char limit in DB.
                 tag_obj = model.Tag.by_name(tagi)
                 if not tag_obj:
                     tag_obj = model.Tag(name=tagi)
@@ -273,10 +266,13 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
     pkg.extras = extras
     pkg.url = data['package_url']
     if 'package_resource' in data:
-        ofs = get_ofs()
-        ofs.put_stream(BUCKET, data['package_xml_save']['label'],
-            data['package_xml_save']['xml'], {})
-        pkg.add_resource(**(data['package_resource']))
+        try:
+            ofs = get_ofs()
+            ofs.put_stream(BUCKET, data['package_xml_save']['label'],
+                data['package_xml_save']['xml'], {})
+            pkg.add_resource(**(data['package_resource']))
+        except KeyError:
+            pass
     if harvest_object is not None:
         harvest_object.package_id = pkg.id
         harvest_object.content = None
