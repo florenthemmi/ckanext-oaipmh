@@ -279,9 +279,25 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
         harvest_object.current = True
         harvest_object.save()
     # Metadata may have different identifiers, pick link, if exists.
+
+    # See: https://github.com/okfn/ckan/blob/master/ckan/public/base/images/sprite-resource-icons.png
+    # "Data" format is used by CKAN to identify unknown resources.
+    # You can use it if you want (default format is "html"). For example:
+    # - http://my.data.com/my-generated-resource?data
+    # - http://my.data.com/my-resource.data
+    available_formats = ['data', 'rdf', 'pdf', 'api', 'zip', 'xls', 'csv', 'txt', 'xml', 'json', 'html']
+    default_format = 'html'
+
     for ids in metadata['identifier']:
         if ids.startswith('http://') or ids.startswith('https://'):
-            pkg.add_resource(ids, name=pkg.title, format='html')
+            # The end of the URL must be the format, otherwise it will use "html" by default
+            infer_format = default_format
+
+            for format in available_formats:
+                if ids.endswith(format):
+                    infer_format = format
+
+            pkg.add_resource(ids, name=pkg.title, format=infer_format)
     # All belong to the main group even if they do not belong to any set.
     if group is not None:
         group.add_package_by_name(pkg.name)
