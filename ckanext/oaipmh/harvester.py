@@ -508,28 +508,6 @@ class OAIPMHHarvester(HarvesterBase):
         data['package_url'] = '%s?verb=GetRecord&identifier=%s&%s=%s' % (
             harvest_object.job.source.url, data['identifier'],
             self.metadata_prefix_key, self.metadata_prefix_value,)
-        try:
-            nowstr = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')
-            label = '%s/%s.xml' % (nowstr, data['identifier'])
-            f = urllib2.urlopen(data['package_url'])
-            x = f.read()
-            fileurl = config.get('ckan.site_url') + h.url_for('storage_file', label=label)
-            data['package_xml_save'] = { 'label':label, 'xml':x }
-            data['package_resource'] = { 'url':fileurl,
-                'description':'Original metadata record',
-                'format':'xml', 'size':len(x) }
-        except (urllib2.HTTPError, urllib2.URLError,):
-            self._add_retry(harvest_object)
-            self._save_object_error('Could not get original metadata record!',
-                                    harvest_object, stage='Import')
-            return False
-        except socket.error:
-            self._add_retry(harvest_object)
-            errno, errstr = sys.exc_info()[:2]
-            self._save_object_error(
-                'Socket error original metadata record %s, details:\n%s' % (errno, errstr),
-                harvest_object, stage='Import')
-            return False
         return oai_dc2ckan(data, kata_oai_dc_reader._namespaces, group, harvest_object)
 
     def _fetch_import_set(self, harvest_object, master_data, client, group):
