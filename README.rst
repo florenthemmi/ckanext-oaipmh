@@ -30,12 +30,27 @@ Harvester
 Then navigate to http://localhost:5000/harvest to see your existing harvest sources.
 Navigate to http://localhost:5000/harvest/new to add a new harvesting source.
 For this source do:
-  * Fill in URL to a OAI-PMH repository.
-  * Select 'Source Type' to be 'OAI-PMH'.
-  * In configuration, you must add your selected sets that should be imported.
-  The format is JSON and only accepts a string named 'query'
-    eg. '{"query":"Faculty of Science and Forestry"}'
-  * Click save
+
+* Fill in URL to a OAI-PMH repository.
+* Select 'Source Type' to be 'OAI-PMH'.
+* In configuration, you must add your selected sets that should be imported.
+* Click save
+
+The OAI-PMH harvester support a number of configuration options to control their behaviour. Those need to be defined as a JSON object in the configuration form field. The currently supported configuration options are:
+
+* **default_tags**: A list of tags that will be added to all harvested datasets. Tags don't need to previously exist.
+* **default_extras**: A dictionary of key value pairs that will be added to extras of the harvested datasets (existing extras are overwritten).
+* **force_all**: By default, after the first harvesting, the harvester will gather only the modified packages from the remote site since the last harvesting. Setting this property to true will force the harvester to gather all remote packages regardless of the modification date. Default is False.
+
+Here is an example of a configuration object (the one that must be entered in the configuration field):
+
+::
+
+  {
+    "default_tags": ["ods"],
+    "default_extras": {"company": "OpenDataSoft"},
+    "force_all": true
+  }
 
 You may need to configure your fetch and gather consumer to be run as daemons or
 via a the paster commands.
