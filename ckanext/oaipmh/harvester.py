@@ -143,7 +143,7 @@ class OAIPMHHarvester(HarvesterBase):
 
         try:
             config_obj = json.loads(config)
-            allowed_params = ['default_tags']
+            allowed_params = ['default_tags', 'force_all']
 
             for key in config_obj:
                 if key not in allowed_params:
@@ -152,6 +152,10 @@ class OAIPMHHarvester(HarvesterBase):
             if 'default_tags' in config_obj:
                 if not isinstance(config_obj['default_tags'], list):
                     raise ValueError('default_tags must be a list')
+
+            if 'force_all' in config_obj:
+                if not isinstance(config_obj['force_all'], bool):
+                    raise ValueError('force_all must be boolean')
 
         except ValueError, e:
             raise e
@@ -314,7 +318,8 @@ class OAIPMHHarvester(HarvesterBase):
         try:
             domain = identifier.repositoryName()
             args = { self.metadata_prefix_key:self.metadata_prefix_value }
-            args.update(from_until)
+            if not self.config.get('force_all', False):
+                args.update(from_until)
             for ident in client.listIdentifiers(**args):
                 if ident.identifier() in ident2rec:
                     continue # On our retry list already, do not fetch twice.
