@@ -143,6 +143,15 @@ class OAIPMHHarvester(HarvesterBase):
 
         try:
             config_obj = json.loads(config)
+            allowed_params = ['default_tags']
+
+            for key in config_obj:
+                if key not in allowed_params:
+                    raise ValueError('Unknown parameter "%s"' % key)
+
+            if 'default_tags' in config_obj:
+                if not isinstance(config_obj['default_tags'], list):
+                    raise ValueError('default_tags must be a list')
 
         except ValueError, e:
             raise e
@@ -299,7 +308,6 @@ class OAIPMHHarvester(HarvesterBase):
             harvest_job.source.url, harvest_job)
         if not identifier:
             self._raise_gather_failure('Could not get source identifier.')
-        #query = self.config['query'] if 'query' in self.config else ''
         # Get things to retry.
         ident2rec, ident2set = self._scan_retries(harvest_job)
         rec_idents = []
@@ -445,6 +453,7 @@ class OAIPMHHarvester(HarvesterBase):
         '''
         # Do common tasks and then call different methods depending on what
         # kind of info the harvest object contains.
+        self._set_config(harvest_object.job.source.config)
         ident = json.loads(harvest_object.content)
         registry = MetadataRegistry()
         registry.registerReader(self.metadata_prefix_value, kata_oai_dc_reader)
@@ -469,6 +478,14 @@ class OAIPMHHarvester(HarvesterBase):
 
     def _package_name_from_identifier(self, identifier):
         return urllib.quote_plus(urllib.quote_plus(identifier))
+
+    def _metadata(self, metadata):
+        default_tags = self.config.get('default_tags', [])
+
+        if default_tags:
+            metadata['subject'].extend([t for t in default_tags if t not in metadata['subject']])
+
+        return metadata
 
     def _fetch_import_record(self, harvest_object, master_data, client, group):
         # The fetch part.
@@ -515,7 +532,7 @@ class OAIPMHHarvester(HarvesterBase):
         # Gather all relevant information into a dictionary.
         data = {}
         data['identifier'] = master_data['record'][0]
-        data['metadata'] = master_data['record'][1]
+        data['metadata'] = self._metadata(master_data['record'][1])
         data['package_name'] = self._package_name_from_identifier(
             data['identifier'])
         data['package_url'] = '%s?verb=GetRecord&identifier=%s&%s=%s' % (
@@ -610,7 +627,7 @@ class OAIPMHHarvester(HarvesterBase):
             client.getNamespaces(), client.getMetadataRegistry(), tree);
         data = {}
         data['identifier'] = records[0][0].identifier()
-        data['metadata'] = records[0][1].getMap()
+        data['metadata'] = self._metadata(records[0][1].getMap())
         data['package_name'] = self._package_name_from_identifier(
             data['identifier'])
         data['package_url'] = None
