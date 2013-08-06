@@ -256,7 +256,7 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
     for key, value in metadata.items():
         if value is None or len(value) == 0 or key in ('titleNode', 'subject', 'type', 'rightsNode', 'publisherNode', 'creator', 'contributorNode', 'description', 'identifier', 'language', 'formatNode',):
             continue
-        extras[key] = ' '.join(value)
+        extras[key] = value
     #description = metadata['description'][0] if len(metadata['description']) else ''
     notes = ' '.join(metadata.get('description', []))
     pkg.notes = notes.replace('\n', ' ').replace('  ', ' ')

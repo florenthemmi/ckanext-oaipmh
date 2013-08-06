@@ -143,11 +143,15 @@ class OAIPMHHarvester(HarvesterBase):
 
         try:
             config_obj = json.loads(config)
-            allowed_params = ['default_tags', 'force_all']
+            allowed_params = ['default_extras', 'default_tags', 'force_all']
 
             for key in config_obj:
                 if key not in allowed_params:
                     raise ValueError('Unknown parameter "%s"' % key)
+
+            if 'default_extras' in config_obj:
+                if not isinstance(config_obj['default_extras'], dict):
+                    raise ValueError('default_extras must be a dictionary')
 
             if 'default_tags' in config_obj:
                 if not isinstance(config_obj['default_tags'], list):
@@ -485,9 +489,15 @@ class OAIPMHHarvester(HarvesterBase):
         return urllib.quote_plus(urllib.quote_plus(identifier))
 
     def _metadata(self, metadata):
+        default_extras = self.config.get('default_extras', {})
         default_tags = self.config.get('default_tags', [])
 
-        if default_tags:
+        if default_extras:
+            for key, value in default_extras.iteritems():
+                if not key in metadata:
+                    metadata[key] = value
+
+        if 'subject' in metadata and default_tags:
             metadata['subject'].extend([t for t in default_tags if t not in metadata['subject']])
 
         return metadata
