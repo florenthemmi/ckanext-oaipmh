@@ -119,7 +119,8 @@ class OAIPMHHarvester(HarvesterBase):
     metadata_prefix_value = 'oai_dc'
 
     def _set_config(self, config_str):
-        '''Set the configuration string.
+        '''
+        Set the configuration string.
         '''
         if config_str:
             self.config = json.loads(config_str)
@@ -131,10 +132,22 @@ class OAIPMHHarvester(HarvesterBase):
         Return information about this harvester.
         '''
         return {
-                'name': 'OAI-PMH',
-                'title': 'OAI-PMH',
-                'description': 'A server which has a OAI-PMH interface available.'
-                }
+            'name': 'OAI-PMH',
+            'title': 'OAI-PMH',
+            'description': 'A server which has a OAI-PMH interface available.'
+        }
+
+    def validate_config(self, config):
+        if not config:
+            return config
+
+        try:
+            config_obj = json.loads(config)
+
+        except ValueError, e:
+            raise e
+
+        return config
 
 
     def _datetime_from_str(self, s):
