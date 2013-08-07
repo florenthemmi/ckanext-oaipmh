@@ -31,7 +31,6 @@ from oaipmh import common
 
 from dataconverter import oai_dc2ckan
 from gather_failure import GatherFailure
-from retry import HarvesterRetry
 
 log = logging.getLogger(__name__)
 
@@ -187,27 +186,6 @@ class OAIPMHHarvester(HarvesterBase):
     def _str_from_datetime(self, dt):
         return dt.strftime('%Y-%m-%dT%H:%M:%S')
 
-    def _add_retry(self, harvest_object):
-        HarvesterRetry.mark_for_retry(harvest_object)
-
-    def _scan_retries(self, harvest_job):
-        self._retry = HarvesterRetry()
-        ident2obj = {}
-        ident2set = {}
-        for harvest_object in self._retry.find_all_retries(harvest_job):
-            data = json.loads(harvest_object.content)
-            if data['fetch_type'] == 'record':
-                ident2obj[data['record']] = harvest_object
-            elif data['fetch_type'] == 'set':
-                ident2set[data['set_name']] = harvest_object
-            else:
-                # This should not happen...
-                log.debug('Unknown retry fetch type: %s' % data['fetch_type'])
-        return (ident2obj, ident2set,)
-
-    def _clear_retries(self):
-        self._retry.clear_retry_marks()
-
     def _get_client_identifier(self, url, harvest_job=None):
         registry = MetadataRegistry()
         registry.registerReader(self.metadata_prefix_value, kata_oai_dc_reader)
@@ -252,44 +230,6 @@ class OAIPMHHarvester(HarvesterBase):
         # Use [] to indicate retries should be done. None to do nothing.
         raise GatherFailure(strerror, retry_list)
 
-    def _make_retry_lists(self, harvest_job, ident2rec, ident2set, from_until):
-        recs = []
-        for ident, harv in ident2rec.items():
-            info = json.loads(harv.content)
-            harv.content = None
-            harv.save()
-            harvest_obj = HarvestObject(job=harvest_job)
-            harvest_obj.content = json.dumps(info)
-            harvest_obj.save()
-            recs.append(harvest_obj.id)
-            log.debug('Retrying record: %s' % harv.id)
-        sets = []
-        insertion_retries = set()
-        def update_until(info, from_until):
-            if 'until' not in info:
-                return # Wanted up to current time earlier.
-            if 'until' not in from_until:
-                del info['until'] # Want up to current time now.
-                return
-            fu = self._str_from_datetime(from_until['until'])
-            if info['until'] < fu: # Keep latest date from the two alternatives.
-                info['until'] = fu
-        for name, obj in ident2set.items():
-            info = json.loads(obj.content)
-            obj.content = None
-            obj.save()
-            update_until(info, from_until)
-            harvest_obj = HarvestObject(job=harvest_job)
-            harvest_obj.content = json.dumps(info)
-            harvest_obj.save()
-            sets.append(harvest_obj.id)
-            if 'set' not in info:
-                insertion_retries.add(name)
-                log.debug('Retrying set insertions: %s' % info['set_name'])
-            else:
-                log.debug('Retrying set: %s' % info['set_name'])
-        return (recs, sets, insertion_retries,)
-
     def _get_time_limits(self, harvest_job):
         def date_from_config(key):
             return self._datetime_from_str(config.get(key, None))
@@ -317,7 +257,7 @@ class OAIPMHHarvester(HarvesterBase):
         if not identifier:
             self._raise_gather_failure('Could not get source identifier.')
         # Get things to retry.
-        ident2rec, ident2set = self._scan_retries(harvest_job)
+        ident2rec, ident2set = {}, {}
         rec_idents = []
         try:
             domain = identifier.repositoryName()
@@ -360,8 +300,7 @@ class OAIPMHHarvester(HarvesterBase):
         # Since network errors can't occur anymore, it's ok to create the
         # harvest objects to return to caller since we are not missing anything
         # crucial.
-        harvest_objs, set_objs, insertion_retries = self._make_retry_lists(
-            harvest_job, ident2rec, ident2set, from_until)
+        harvest_objs, set_objs, insertion_retries = [], [], set()
         for ident in rec_idents:
             info = { 'fetch_type':'record', 'record':ident, 'domain':domain }
             harvest_obj = HarvestObject(job=harvest_job)
@@ -382,7 +321,6 @@ class OAIPMHHarvester(HarvesterBase):
             harvest_obj.content = json.dumps(info)
             harvest_obj.save()
             harvest_objs.append(harvest_obj.id)
-        self._clear_retries()
         log.info(
             'Gathered %i records/sets from %s.' % (len(harvest_objs), domain,))
         return harvest_objs
@@ -413,11 +351,9 @@ class OAIPMHHarvester(HarvesterBase):
             if e.harvest_obj_ids is not None:
                 # We should be able to retry previous failures.
                 from_until = self._get_time_limits(harvest_job)
-                ident2rec, ident2set = self._scan_retries(harvest_job)
-                retry_ids, set_objs, _ = self._make_retry_lists(
-                    harvest_job, ident2rec, ident2set, from_until)
+                ident2rec, ident2set = {}, {}
+                retry_ids, set_objs, _ = [], [], set()
                 retry_ids.extend(set_objs)
-                self._clear_retries()
         except Exception as e:
             log.error(traceback.format_exc(e))
         model.repo.commit()
@@ -481,7 +417,6 @@ class OAIPMHHarvester(HarvesterBase):
         except Exception as e:
             # Guard against miscellaneous stuff. Probably plain bugs.
             # Also very rare exceptions we haven't seen yet.
-            self._add_retry(harvest_object)
             log.debug(traceback.format_exc(e))
         return False
 
@@ -509,25 +444,21 @@ class OAIPMHHarvester(HarvesterBase):
                 metadataPrefix=self.metadata_prefix_value,
                 identifier=master_data['record'])
         except XMLSyntaxError:
-            self._add_retry(harvest_object)
             log.error('oai_dc XML syntax error: %s' % master_data['record'])
             self._save_object_error('Syntax error.', harvest_object,
                 stage='Fetch')
             return False
         except socket.error:
-            self._add_retry(harvest_object)
             errno, errstr = sys.exc_info()[:2]
             self._save_object_error(
                 'Socket error OAI-PMH %s, details:\n%s' % (errno, errstr),
                 harvest_object, stage='Fetch')
             return False
         except urllib2.URLError:
-            self._add_retry(harvest_object)
             self._save_object_error('Failed to fetch record.', harvest_object,
                 stage='Fetch')
             return False
         except httplib.BadStatusLine:
-            self._add_retry(harvest_object)
             self._save_object_error('Bad HTTP response status line.',
                 harvest_object, stage='Fetch')
             return False
@@ -537,7 +468,6 @@ class OAIPMHHarvester(HarvesterBase):
             log.warning('No metadata: %s' % master_data['record'])
             return False
         if 'date' not in metadata.getMap() or not metadata.getMap()['date']:
-            self._add_retry(harvest_object)
             self._save_object_error('Missing date: %s' % master_data['record'],
                 harvest_object, stage='Fetch')
             return False
@@ -572,14 +502,12 @@ class OAIPMHHarvester(HarvesterBase):
             except NoRecordsMatchError:
                 return False # Ok, empty set. Nothing to do.
             except socket.error:
-                self._add_retry(harvest_object)
                 errno, errstr = sys.exc_info()[:2]
                 self._save_object_error(
                     'Socket error OAI-PMH %s, details:\n%s' % (errno, errstr,),
                     harvest_object, stage='Fetch')
                 return False
             except httplib.BadStatusLine:
-                self._add_retry(harvest_object)
                 self._save_object_error('Bad HTTP response status line.',
                     harvest_object, stage='Fetch')
                 return False
@@ -618,7 +546,6 @@ class OAIPMHHarvester(HarvesterBase):
             if 'set' in master_data:
                 del master_data['set'] # Omit fetch later.
             harvest_object.content = json.dumps(master_data)
-            self._add_retry(harvest_object)
             log.debug('Missed %s %i' % (master_data['set_name'], len(missed),))
         else:
             harvest_object.content = None # Clear data.
