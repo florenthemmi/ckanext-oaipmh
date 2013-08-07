@@ -30,7 +30,6 @@ from oaipmh.error import XMLSyntaxError
 from oaipmh import common
 
 from dataconverter import oai_dc2ckan
-from gather_failure import GatherFailure
 
 log = logging.getLogger(__name__)
 
@@ -226,10 +225,6 @@ class OAIPMHHarvester(HarvesterBase):
                 model.repo.commit()
         return group
 
-    def _raise_gather_failure(self, strerror, retry_list=None):
-        # Use [] to indicate retries should be done. None to do nothing.
-        raise GatherFailure(strerror, retry_list)
-
     def _get_time_limits(self, harvest_job):
         def date_from_config(key):
             return self._datetime_from_str(config.get(key, None))
@@ -255,7 +250,7 @@ class OAIPMHHarvester(HarvesterBase):
         client, identifier = self._get_client_identifier(
             harvest_job.source.url, harvest_job)
         if not identifier:
-            self._raise_gather_failure('Could not get source identifier.')
+            raise RuntimeError('Could not get source identifier.')
         # Get things to retry.
         ident2rec, ident2set = {}, {}
         rec_idents = []
@@ -276,7 +271,7 @@ class OAIPMHHarvester(HarvesterBase):
             log.debug(traceback.format_exc(e))
             self._save_gather_error(
                 'Could not fetch identifier list.', harvest_job)
-            self._raise_gather_failure('Could not fetch an identifier list.')
+            raise RuntimeError('Could not fetch an identifier list.')
         # Gathering the set list here. Member identifiers in fetch.
         group = self._get_group(domain)
         sets = []
@@ -296,7 +291,7 @@ class OAIPMHHarvester(HarvesterBase):
             self._save_gather_error(
                 'Could not fetch a set list.', harvest_job)
             # We got something so perhaps records can gen gotten, hence [].
-            self._raise_gather_failure('Could not fetch set list.', [])
+            raise RuntimeError('Could not fetch set list.')
         # Since network errors can't occur anymore, it's ok to create the
         # harvest objects to return to caller since we are not missing anything
         # crucial.
@@ -346,19 +341,9 @@ class OAIPMHHarvester(HarvesterBase):
         retry_ids = []
         try:
             result = self._gather_stage(harvest_job)
-        except GatherFailure as e:
-            log.error('Gather %s failed: %s' % (harvest_job.id, e.message,))
-            if e.harvest_obj_ids is not None:
-                # We should be able to retry previous failures.
-                from_until = self._get_time_limits(harvest_job)
-                ident2rec, ident2set = {}, {}
-                retry_ids, set_objs, _ = [], [], set()
-                retry_ids.extend(set_objs)
         except Exception as e:
             log.error(traceback.format_exc(e))
         model.repo.commit()
-        if result is None:
-            raise GatherFailure(ids=retry_ids)
         return result
 
     def fetch_stage(self, harvest_object):
