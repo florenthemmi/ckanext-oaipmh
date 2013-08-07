@@ -1,35 +1,31 @@
-'''
+"""
 Harvester for OAI-PMH interfaces.
-'''
+"""
 #pylint: disable-msg=E1101,E0611,F0401
 import logging
 import json
-import unicodedata
-import string
 import urllib2
 import urllib
-import datetime
 import sys
-from lxml import etree
-import pickle
 import httplib
 
+from lxml import etree
+from dataconverter import oai_dc2ckan
+
+import datetime
 from ckan.model import Session, Package, Group, Member
 from ckan import model
-
 from ckanext.harvest.harvesters.base import HarvesterBase
 from ckanext.harvest.model import HarvestObject, HarvestJob
 from ckan.model.authz import setup_default_user_roles
 from ckan.lib import helpers as h
 from pylons import config
-
 import oaipmh.client
 from oaipmh.metadata import MetadataReader, MetadataRegistry, oai_dc_reader
 from oaipmh.error import NoSetHierarchyError, NoRecordsMatchError
 from oaipmh.error import XMLSyntaxError
 from oaipmh import common
 
-from dataconverter import oai_dc2ckan
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +62,7 @@ class KataMetadataReader(MetadataReader):
                 # it in code elsewhere. Apparently always a list of 1 node.
                 value = e(expr)
             else:
-                raise Error, "Unknown field type: %s" % field_type
+                raise ValueError("Unknown field type: %s" % field_type)
             map_[field_name] = value
         return common.Metadata(map_)
 
@@ -75,41 +71,38 @@ class KataMetadataReader(MetadataReader):
 # be found at all.
 kata_oai_dc_reader = KataMetadataReader(
     fields={
-    #'title':       ('textList', 'oai_dc:dc/dc:title/text()'),
-    'titleNode':   ('node', 'oai_dc:dc/dc:title'),
-    'creator':     ('textList', 'oai_dc:dc/dc:creator/text()'),
-    'subject':     ('textList', 'oai_dc:dc/dc:subject/text()'),
-    'description': ('textList', 'oai_dc:dc/dc:description/text()'),
-    #'publisher':   ('textList', 'oai_dc:dc/dc:publisher/text()'),
-    #'contributor': ('textList', 'oai_dc:dc/dc:contributor/text()'),
-    'date':        ('textList', 'oai_dc:dc/dc:date/text()'),
-    'type':        ('textList', 'oai_dc:dc/dc:type/text()'),
-    'format':      ('textList', 'oai_dc:dc/dc:format/text()'),
-    'identifier':  ('textList', 'oai_dc:dc/dc:identifier/text()'),
-    'source':      ('textList', 'oai_dc:dc/dc:source/text()'),
-    'language':    ('textList', 'oai_dc:dc/dc:language/text()'),
-    'relation':    ('textList', 'oai_dc:dc/dc:relation/text()'),
-    'coverage':    ('textList', 'oai_dc:dc/dc:coverage/text()'),
-    #'rights':      ('textList', 'oai_dc:dc/dc:rights/text()'),
-    'rightsNode': ('node', 'oai_dc:dc/dc:rights'),
-    'publisherNode': ('node', 'oai_dc:dc/dc:publisher'),
-    'contributorNode': ('node', 'oai_dc:dc/dc:contributor'),
-    'formatNode':      ('node', 'oai_dc:dc/dc:hasFormat'),
+        'titleNode':       ('node', 'oai_dc:dc/dc:title'),
+        'creator':         ('textList', 'oai_dc:dc/dc:creator/text()'),
+        'subject':         ('textList', 'oai_dc:dc/dc:subject/text()'),
+        'description':     ('textList', 'oai_dc:dc/dc:description/text()'),
+        'date':            ('textList', 'oai_dc:dc/dc:date/text()'),
+        'type':            ('textList', 'oai_dc:dc/dc:type/text()'),
+        'format':          ('textList', 'oai_dc:dc/dc:format/text()'),
+        'identifier':      ('textList', 'oai_dc:dc/dc:identifier/text()'),
+        'source':          ('textList', 'oai_dc:dc/dc:source/text()'),
+        'language':        ('textList', 'oai_dc:dc/dc:language/text()'),
+        'relation':        ('textList', 'oai_dc:dc/dc:relation/text()'),
+        'coverage':        ('textList', 'oai_dc:dc/dc:coverage/text()'),
+        'rightsNode':      ('node', 'oai_dc:dc/dc:rights'),
+        'publisherNode':   ('node', 'oai_dc:dc/dc:publisher'),
+        'contributorNode': ('node', 'oai_dc:dc/dc:contributor'),
+        'formatNode':      ('node', 'oai_dc:dc/dc:hasFormat'),
     },
     namespaces={
-    'oai_dc': 'http://www.openarchives.org/OAI/2.0/oai_dc/',
-    'dc' : 'http://purl.org/dc/elements/1.1/',
-    'foaf' : "http://xmlns.com/foaf/0.1/",
-    'rdfs' : "http://www.w3.org/2000/01/rdf-schema#",
-    'fp' : "http://downlode.org/Code/RDF/File_Properties/schema#",
-    'wn' : "http://xmlns.com/wordnet/1.6/"
+        'oai_dc': 'http://www.openarchives.org/OAI/2.0/oai_dc/',
+        'dc':     'http://purl.org/dc/elements/1.1/',
+        'foaf':   'http://xmlns.com/foaf/0.1/',
+        'rdfs':   'http://www.w3.org/2000/01/rdf-schema#',
+        'fp':     'http://downlode.org/Code/RDF/File_Properties/schema#',
+        'wn':     'http://xmlns.com/wordnet/1.6/'
     }
 )
 
+
 class OAIPMHHarvester(HarvesterBase):
-    '''
+    """
     OAI-PMH Harvester for ckanext-harvester.
-    '''
+    """
 
     config = None
 
@@ -117,18 +110,18 @@ class OAIPMHHarvester(HarvesterBase):
     metadata_prefix_value = 'oai_dc'
 
     def _set_config(self, config_str):
-        '''
+        """
         Set the configuration string.
-        '''
+        """
         if config_str:
             self.config = json.loads(config_str)
         else:
             self.config = {}
 
     def info(self):
-        '''
+        """
         Return information about this harvester.
-        '''
+        """
         return {
             'name': 'OAI-PMH',
             'title': 'OAI-PMH',
@@ -164,11 +157,10 @@ class OAIPMHHarvester(HarvesterBase):
 
         return config
 
-
     def _datetime_from_str(self, s):
         # Used to get date from settings file when testing harvesting with
         # (semi-open) date interval.
-        if s == None:
+        if s is None:
             return s
         try:
             t = datetime.datetime.strptime(s, '%Y-%m-%dT%H:%M:%S')
@@ -179,7 +171,7 @@ class OAIPMHHarvester(HarvesterBase):
             t = datetime.datetime.strptime(s, '%Y-%m-%d')
             return t
         except ValueError:
-            log.debug('Bad date for %s: %s' % (key, s,))
+            log.debug('Bad date for %s' % s)
         return None
 
     def _str_from_datetime(self, dt):
@@ -196,22 +188,22 @@ class OAIPMHHarvester(HarvesterBase):
                 self._save_gather_error(
                     'Could not gather from %s!' % harvest_job.source.url,
                     harvest_job)
-            return (client, None,)
+            return client, None
         except socket.error:
             if harvest_job:
                 errno, errstr = sys.exc_info()[:2]
                 self._save_gather_error(
                     'Socket error OAI-PMH %s, details:\n%s' % (errno, errstr),
                     harvest_job)
-            return (client, None,)
+            return client, None
         except ValueError:
             # We have no source URL when importing via UI.
-            return (client, None,)
+            return client, None
         except Exception as e:
             # Guard against miscellaneous stuff. Probably plain bugs.
             log.debug(traceback.format_exc(e))
-            return (client, None,)
-        return (client, identifier,)
+            return client, None
+        return client, identifier
 
     def _get_group(self, domain, in_revision=True):
         group = Group.by_name(domain)
@@ -231,9 +223,9 @@ class OAIPMHHarvester(HarvesterBase):
         from_ = date_from_config('ckanext.harvest.test.from')
         until = date_from_config('ckanext.harvest.test.until')
         previous_job = Session.query(HarvestJob) \
-            .filter(HarvestJob.source==harvest_job.source) \
-            .filter(HarvestJob.gather_finished!=None) \
-            .filter(HarvestJob.id!=harvest_job.id) \
+            .filter(HarvestJob.source == harvest_job.source) \
+            .filter(HarvestJob.gather_finished != None) \
+            .filter(HarvestJob.id != harvest_job.id) \
             .order_by(HarvestJob.gather_finished.desc()).limit(1).first()
         # Settings for debugging override old existing value.
         if previous_job and not from_ and not until:
@@ -254,18 +246,18 @@ class OAIPMHHarvester(HarvesterBase):
         # Get things to retry.
         ident2rec, ident2set = {}, {}
         rec_idents = []
+        domain = identifier.repositoryName()
         try:
-            domain = identifier.repositoryName()
-            args = { self.metadata_prefix_key:self.metadata_prefix_value }
+            args = {self.metadata_prefix_key: self.metadata_prefix_value}
             if not self.config.get('force_all', False):
                 args.update(from_until)
             for ident in client.listIdentifiers(**args):
                 if ident.identifier() in ident2rec:
-                    continue # On our retry list already, do not fetch twice.
+                    continue  # On our retry list already, do not fetch twice.
                 rec_idents.append(ident.identifier())
         except NoRecordsMatchError:
             log.debug('No records matched: %s' % domain)
-            pass # Ok. Just nothing to get.
+            pass  # Ok. Just nothing to get.
         except Exception as e:
             # Once we know of something specific, handle it separately.
             log.debug(traceback.format_exc(e))
@@ -273,7 +265,6 @@ class OAIPMHHarvester(HarvesterBase):
                 'Could not fetch identifier list.', harvest_job)
             raise RuntimeError('Could not fetch an identifier list.')
         # Gathering the set list here. Member identifiers in fetch.
-        group = self._get_group(domain)
         sets = []
         try:
             for set_ in client.listSets():
@@ -281,7 +272,7 @@ class OAIPMHHarvester(HarvesterBase):
                 # Is set due for retry and it is not missing member insertion?
                 # Set either failed in retry of misses packages but not both.
                 # Set with failed insertions may have new members.
-                if name in ident2set and name not in insertion_retries:
+                if name in ident2set:
                     continue
                 sets.append((identifier, name,))
         except NoSetHierarchyError:
@@ -297,7 +288,7 @@ class OAIPMHHarvester(HarvesterBase):
         # crucial.
         harvest_objs, set_objs, insertion_retries = [], [], set()
         for ident in rec_idents:
-            info = { 'fetch_type':'record', 'record':ident, 'domain':domain }
+            info = {'fetch_type': 'record', 'record': ident, 'domain': domain}
             harvest_obj = HarvestObject(job=harvest_job)
             harvest_obj.content = json.dumps(info)
             harvest_obj.save()
@@ -307,8 +298,7 @@ class OAIPMHHarvester(HarvesterBase):
         harvest_objs.extend(set_objs)
         for set_id, set_name in sets:
             harvest_obj = HarvestObject(job=harvest_job)
-            info = { 'fetch_type':'set', 'set': set_id, 'set_name': set_name,
-                'domain': domain, }
+            info = {'fetch_type': 'set', 'set': set_id, 'set_name': set_name, 'domain': domain}
             if 'from_' in from_until:
                 info['from_'] = self._str_from_datetime(from_until['from_'])
             if 'until' in from_until:
@@ -321,7 +311,7 @@ class OAIPMHHarvester(HarvesterBase):
         return harvest_objs
 
     def gather_stage(self, harvest_job):
-        '''
+        """
         The gather stage will recieve a HarvestJob object and will be
         responsible for:
             - gathering all the necessary objects to fetch on a later.
@@ -334,11 +324,10 @@ class OAIPMHHarvester(HarvesterBase):
 
         :param harvest_job: HarvestJob object
         :returns: A list of HarvestObject ids
-        '''
+        """
         self._set_config(harvest_job.source.config)
         model.repo.new_revision()
         result = None
-        retry_ids = []
         try:
             result = self._gather_stage(harvest_job)
         except Exception as e:
@@ -347,7 +336,7 @@ class OAIPMHHarvester(HarvesterBase):
         return result
 
     def fetch_stage(self, harvest_object):
-        '''
+        """
         The fetch stage will receive a HarvestObject object and will be
         responsible for:
             - getting the contents of the remote object (e.g. for a CSW server,
@@ -359,13 +348,13 @@ class OAIPMHHarvester(HarvesterBase):
 
         :param harvest_object: HarvestObject object
         :returns: True if everything went right, False if errors were found
-        '''
+        """
         # I needed to store things that don't pickle so import has to do all
         # the work. Well, this avoids saving intermediate info in the DB.
         return True
 
     def import_stage(self, harvest_object):
-        '''
+        """
         The import stage will receive a HarvestObject object and will be
         responsible for:
             - performing any necessary action with the fetched object (e.g
@@ -380,7 +369,7 @@ class OAIPMHHarvester(HarvesterBase):
 
         :param harvest_object: HarvestObject object
         :returns: True if everything went right, False if errors were found
-        '''
+        """
         # Do common tasks and then call different methods depending on what
         # kind of info the harvest object contains.
         self._set_config(harvest_object.job.source.config)
@@ -389,7 +378,7 @@ class OAIPMHHarvester(HarvesterBase):
         registry.registerReader(self.metadata_prefix_value, kata_oai_dc_reader)
         client = oaipmh.client.Client(harvest_object.job.source.url, registry)
         domain = ident['domain']
-        group = Group.get(domain) # Checked in gather_stage so exists.
+        group = Group.get(domain)  # Checked in gather_stage so exists.
         try:
             if ident['fetch_type'] == 'record':
                 return self._fetch_import_record(
@@ -430,8 +419,9 @@ class OAIPMHHarvester(HarvesterBase):
                 identifier=master_data['record'])
         except XMLSyntaxError:
             log.error('oai_dc XML syntax error: %s' % master_data['record'])
-            self._save_object_error('Syntax error.', harvest_object,
-                stage='Fetch')
+            self._save_object_error(
+                'Syntax error.',
+                harvest_object, stage='Fetch')
             return False
         except socket.error:
             errno, errstr = sys.exc_info()[:2]
@@ -440,11 +430,13 @@ class OAIPMHHarvester(HarvesterBase):
                 harvest_object, stage='Fetch')
             return False
         except urllib2.URLError:
-            self._save_object_error('Failed to fetch record.', harvest_object,
-                stage='Fetch')
+            self._save_object_error(
+                'Failed to fetch record.',
+                harvest_object, stage='Fetch')
             return False
         except httplib.BadStatusLine:
-            self._save_object_error('Bad HTTP response status line.',
+            self._save_object_error(
+                'Bad HTTP response status line.',
                 harvest_object, stage='Fetch')
             return False
         if not metadata:
@@ -453,16 +445,18 @@ class OAIPMHHarvester(HarvesterBase):
             log.warning('No metadata: %s' % master_data['record'])
             return False
         if 'date' not in metadata.getMap() or not metadata.getMap()['date']:
-            self._save_object_error('Missing date: %s' % master_data['record'],
+            self._save_object_error(
+                'Missing date: %s' % master_data['record'],
                 harvest_object, stage='Fetch')
             return False
-        master_data['record'] = ( header.identifier(), metadata.getMap(), )
+        master_data['record'] = (header.identifier(), metadata.getMap())
         # Do not save to database (because we can't json nor pickle _Element).
         # The import stage.
         # Gather all relevant information into a dictionary.
-        data = {}
-        data['identifier'] = master_data['record'][0]
-        data['metadata'] = self._metadata(master_data['record'][1])
+        data = {
+            'identifier': master_data['record'][0],
+            'metadata': self._metadata(master_data['record'][1])
+        }
         data['package_name'] = self._package_name_from_identifier(
             data['identifier'])
         data['package_url'] = '%s?verb=GetRecord&identifier=%s&%s=%s' % (
@@ -474,8 +468,7 @@ class OAIPMHHarvester(HarvesterBase):
         # Could be genuine fetch or retry of set insertions.
         if 'set' in master_data:
             # Fetch stage.
-            args = { self.metadata_prefix_key:self.metadata_prefix_value,
-                'set':master_data['set'] }
+            args = {self.metadata_prefix_key: self.metadata_prefix_value, 'set': master_data['set']}
             if 'from_' in master_data:
                 args['from_'] = self._datetime_from_str(master_data['from_'])
             if 'until' in master_data:
@@ -485,7 +478,7 @@ class OAIPMHHarvester(HarvesterBase):
                 for identity in client.listIdentifiers(**args):
                     ids.append(identity.identifier())
             except NoRecordsMatchError:
-                return False # Ok, empty set. Nothing to do.
+                return False  # Ok, empty set. Nothing to do.
             except socket.error:
                 errno, errstr = sys.exc_info()[:2]
                 self._save_object_error(
@@ -493,7 +486,8 @@ class OAIPMHHarvester(HarvesterBase):
                     harvest_object, stage='Fetch')
                 return False
             except httplib.BadStatusLine:
-                self._save_object_error('Bad HTTP response status line.',
+                self._save_object_error(
+                    'Bad HTTP response status line.',
                     harvest_object, stage='Fetch')
                 return False
             master_data['record_ids'] = ids
@@ -529,10 +523,10 @@ class OAIPMHHarvester(HarvesterBase):
             # Store missing names for retry.
             master_data['record_ids'] = missed
             if 'set' in master_data:
-                del master_data['set'] # Omit fetch later.
+                del master_data['set']  # Omit fetch later.
             harvest_object.content = json.dumps(master_data)
             log.debug('Missed %s %i' % (master_data['set_name'], len(missed),))
         else:
-            harvest_object.content = None # Clear data.
+            harvest_object.content = None  # Clear data.
         model.repo.commit()
         return True
