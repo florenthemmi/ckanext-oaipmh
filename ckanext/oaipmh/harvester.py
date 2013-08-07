@@ -551,37 +551,3 @@ class OAIPMHHarvester(HarvesterBase):
             harvest_object.content = None # Clear data.
         model.repo.commit()
         return True
-
-    def import_xml(self, source, xml):
-        # Try to get client identifier so group can be found.
-        client, identifier = self._get_client_identifier(source.url if source is not None else '')
-        group = None
-        if identifier:
-            domain = identifier.repositoryName()
-            group = self._get_group(domain, False)
-        # Convert XML to data.
-        try:
-            tree = client.parse(xml)
-        except SyntaxError:
-            log.error('oai_dc XML import syntax error.')
-            return False
-        records, token = client.buildRecords(self.metadata_prefix_value,
-            client.getNamespaces(), client.getMetadataRegistry(), tree);
-        data = {}
-        data['identifier'] = records[0][0].identifier()
-        data['metadata'] = self._metadata(records[0][1].getMap())
-        data['package_name'] = self._package_name_from_identifier(
-            data['identifier'])
-        data['package_url'] = None
-        # Data to use when saving the XML record.
-        nowstr = datetime.datetime.now().strftime('%Y-%m-%dT%H:%M:%S.%f')
-        label = '%s/%s.xml' % (nowstr, data['identifier'])
-        fileurl = config.get('ckan.site_url') + h.url_for('storage_file',
-            label=label)
-        data['package_xml_save'] = { 'label':label, 'xml':xml }
-        data['package_resource'] = { 'url':fileurl,
-            'description':'Original metadata record',
-            'format':'xml', 'size':len(xml) }
-        return oai_dc2ckan(data, kata_oai_dc_reader._namespaces, group)
-
-
