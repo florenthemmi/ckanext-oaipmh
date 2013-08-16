@@ -35,7 +35,7 @@ socket.setdefaulttimeout(30)
 import traceback
 
 
-class MetadataReader(MetadataReader):
+class CustomMetadataReader(MetadataReader):
     def __call__(self, element):
         map_ = {}
         # create XPathEvaluator for this element
@@ -69,7 +69,7 @@ class MetadataReader(MetadataReader):
 
 # Below namespaces needs to have all namespaces in docs or some things will not
 # be found at all.
-oai_dc_reader = MetadataReader(
+oai_dc_reader = CustomMetadataReader(
     fields={
         'title':           ('textList', 'oai_dc:dc/dc:title/text()'),
         'creator':         ('textList', 'oai_dc:dc/dc:creator/text()'),
