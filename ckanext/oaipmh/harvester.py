@@ -35,7 +35,7 @@ socket.setdefaulttimeout(30)
 import traceback
 
 
-class KataMetadataReader(MetadataReader):
+class MetadataReader(MetadataReader):
     def __call__(self, element):
         map_ = {}
         # create XPathEvaluator for this element
@@ -69,24 +69,23 @@ class KataMetadataReader(MetadataReader):
 
 # Below namespaces needs to have all namespaces in docs or some things will not
 # be found at all.
-kata_oai_dc_reader = KataMetadataReader(
+oai_dc_reader = MetadataReader(
     fields={
-        'titleNode':       ('node', 'oai_dc:dc/dc:title'),
+        'title':           ('textList', 'oai_dc:dc/dc:title/text()'),
         'creator':         ('textList', 'oai_dc:dc/dc:creator/text()'),
         'subject':         ('textList', 'oai_dc:dc/dc:subject/text()'),
         'description':     ('textList', 'oai_dc:dc/dc:description/text()'),
+        'publisherNode':   ('node',     'oai_dc:dc/dc:publisher'),
+        'contributorNode': ('node',     'oai_dc:dc/dc:contributor'),
         'date':            ('textList', 'oai_dc:dc/dc:date/text()'),
         'type':            ('textList', 'oai_dc:dc/dc:type/text()'),
-        'format':          ('textList', 'oai_dc:dc/dc:format/text()'),
+        'formatNode':      ('node',     'oai_dc:dc/dc:format'),
         'identifier':      ('textList', 'oai_dc:dc/dc:identifier/text()'),
         'source':          ('textList', 'oai_dc:dc/dc:source/text()'),
         'language':        ('textList', 'oai_dc:dc/dc:language/text()'),
         'relation':        ('textList', 'oai_dc:dc/dc:relation/text()'),
         'coverage':        ('textList', 'oai_dc:dc/dc:coverage/text()'),
-        'rightsNode':      ('node', 'oai_dc:dc/dc:rights'),
-        'publisherNode':   ('node', 'oai_dc:dc/dc:publisher'),
-        'contributorNode': ('node', 'oai_dc:dc/dc:contributor'),
-        'formatNode':      ('node', 'oai_dc:dc/dc:hasFormat'),
+        'rightsNode':      ('node',     'oai_dc:dc/dc:rights')
     },
     namespaces={
         'oai_dc': 'http://www.openarchives.org/OAI/2.0/oai_dc/',
@@ -179,7 +178,7 @@ class OAIPMHHarvester(HarvesterBase):
 
     def _get_client_identifier(self, url, harvest_job=None):
         registry = MetadataRegistry()
-        registry.registerReader(self.metadata_prefix_value, kata_oai_dc_reader)
+        registry.registerReader(self.metadata_prefix_value, oai_dc_reader)
         client = oaipmh.client.Client(url, registry)
         try:
             identifier = client.identify()
@@ -375,7 +374,7 @@ class OAIPMHHarvester(HarvesterBase):
         self._set_config(harvest_object.job.source.config)
         ident = json.loads(harvest_object.content)
         registry = MetadataRegistry()
-        registry.registerReader(self.metadata_prefix_value, kata_oai_dc_reader)
+        registry.registerReader(self.metadata_prefix_value, oai_dc_reader)
         client = oaipmh.client.Client(harvest_object.job.source.url, registry)
         domain = ident['domain']
         group = Group.get(domain)  # Checked in gather_stage so exists.
@@ -455,14 +454,12 @@ class OAIPMHHarvester(HarvesterBase):
         # Gather all relevant information into a dictionary.
         data = {
             'identifier': master_data['record'][0],
-            'metadata': self._metadata(master_data['record'][1])
+            'metadata': self._metadata(master_data['record'][1]),
+            'package_name': self._package_name_from_identifier(master_data['record'][0]),
+            'package_url': master_data['record'][1]['source'][0] if master_data['record'][1]['source'] else ''
         }
-        data['package_name'] = self._package_name_from_identifier(
-            data['identifier'])
-        data['package_url'] = '%s?verb=GetRecord&identifier=%s&%s=%s' % (
-            harvest_object.job.source.url, data['identifier'],
-            self.metadata_prefix_key, self.metadata_prefix_value,)
-        return oai_dc2ckan(data, kata_oai_dc_reader._namespaces, group, harvest_object)
+
+        return oai_dc2ckan(data, oai_dc_reader._namespaces, group, harvest_object)
 
     def _fetch_import_set(self, harvest_object, master_data, client, group):
         # Could be genuine fetch or retry of set insertions.

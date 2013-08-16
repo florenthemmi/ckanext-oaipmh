@@ -50,22 +50,10 @@ def _match_license(text):
             return lic.id
     return None
 
-def _handle_title(nodes, namespaces):
-    d = {}
-    idx = 0
-    for node in nodes:
-        lang = _find_attribute(node, 'lang')
-        d['title_%i' % idx] = node.text
-        d['lang_title_%i' % idx] = lang
-        idx += 1
-    return d
-
 def _handle_rights(nodes, namespaces):
     d = {}
-    lic_url_idx = 0
-    lic_text_idx = 0
-    for node in nodes:
-        decls = node.xpath('./*[local-name() = "RightsDeclaration"]',
+    if len(nodes):
+        decls = nodes[0].xpath('./*[local-name() = "RightsDeclaration"]',
             namespaces=namespaces)
         if len(decls):
             if len(decls) > 1:
@@ -76,7 +64,7 @@ def _handle_rights(nodes, namespaces):
             category = decls[0].get('RIGHTSCATEGORY')
             text = decls[0].text
         else: # Probably just old-fashioned text.
-            text = node.text
+            text = nodes[0].text
             category = 'LICENSED' # Let's give recognizing the license a try.
         if category == 'LICENSED' and text:
             lic = _match_license(text)
@@ -85,11 +73,9 @@ def _handle_rights(nodes, namespaces):
             else:
                 # Something unknown. Store text or license.
                 if text.startswith('http://') or text.startswith('https://'):
-                    d['licenseURL_%i' % lic_url_idx] = text
-                    lic_url_idx += 1
+                    d['licenseURL'] = text
                 else:
-                    d['licenseText_%i' % lic_text_idx] = text
-                    lic_text_idx += 1
+                    d['licenseText'] = text
         elif category == 'PUBLIC DOMAIN':
             lic = LicenseOtherPublicDomain()
             d['package.license'] = { 'id': lic.id }
@@ -103,7 +89,6 @@ def _handle_rights(nodes, namespaces):
 
 def _handle_contributor(nodes, namespaces):
     d = {}
-    contr_idx = 0
     proj_idx = 0
     for node in nodes:
         # Add iteration over something else when those show up.
@@ -118,9 +103,8 @@ def _handle_contributor(nodes, namespaces):
                     name = ns[0].text
                 d['project_%i' % proj_idx] = name
                 proj_idx += 1
-        elif node.text: # Plain text field has none of the above.
-            d['contributor_%i' % contr_idx] = node.text
-            contr_idx += 1
+    if len(nodes) and len(d) == 0:
+        d['contributor'] = nodes[0].text
     return d
 
 def _handle_publisher(nodes, namespaces):
@@ -141,9 +125,9 @@ def _handle_publisher(nodes, namespaces):
             if email and person_idx == 0: # Just keep first. The rest later?
                 d['package.maintainer_email'] = email
             person_idx += 1
-        # If not persons, then what is this? Apparently just text. Ignore?
-        # Can be name of an organization.
-    return d 
+    if len(nodes) and len(d) == 0:
+        d['publisher'] = nodes[0].text
+    return d
 
 def _handle_format(nodes, namespaces):
     d = []
@@ -180,10 +164,9 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
     model.repo.new_revision()
     identifier = data['identifier']
     metadata = data['metadata']
-    titles = _handle_title(metadata.get('titleNode', []), namespaces)
     # Store title in pkg.title and keep all in extras as well. That way
     # UI will work some way in any case.
-    title = titles.get('title_0', identifier)
+    title = metadata.get('title', identifier)
     #title = metadata['title'][0] if len(metadata['title']) else identifier
     name = data['package_name']
     pkg = Package.get(name)
@@ -197,7 +180,7 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
         # relevant anymore so "delete" all existing resources now.
         for r in pkg.resources:
             r.state = 'deleted'
-    extras = titles
+    extras = {}
     idx = 0
     for s in ('subject', 'type',):
         for tag in metadata.get(s, []):
@@ -221,11 +204,6 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
                 if pkgtag is None:
                     pkgtag = model.PackageTag(tag=tag_obj, package=pkg)
                     pkgtag.save() # Avoids duplicates if tags have duplicates.
-    lastidx = 0
-    for auth in metadata.get('creator', []):
-        extras['organization_%d' % lastidx] = ''
-        extras['author_%d' % lastidx] = auth
-        lastidx += 1
     extras.update(
         _handle_contributor(metadata.get('contributorNode', []), namespaces))
     extras.update(
@@ -238,15 +216,6 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
     if 'package.license' in extras:
         pkg.license = extras['package.license']
         del extras['package.license']
-    # Causes failure in commit for some reason.
-    #for f in _handle_format(metadata.get('formatNode', []), namespaces):
-    #    pprint.pprint(f)
-    #    pkg.add_resource(**f)
-    # There may be multiple identifiers (URL, ISBN, ...) in the metadata.
-    id_idx = 0
-    for ident in metadata.get('identifier', []):
-        extras['identifier_%i' % id_idx] = ident
-        id_idx += 1
     # Check that we have a language.
     lang = metadata.get('language', [])
     if lang is not None and len(lang) and len(lang[0]) > 1:
@@ -254,14 +223,15 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
     # The rest.
     # description below goes to pkg.notes. I think it should not added here.
     for key, value in metadata.items():
-        if value is None or len(value) == 0 or key in ('titleNode', 'subject', 'type', 'rightsNode', 'publisherNode', 'creator', 'contributorNode', 'description', 'identifier', 'language', 'formatNode',):
+        if value is None or len(value) == 0 or key in ('title', 'description', 'publisherNode', 'contributorNode', 'formatNode', 'identifier', 'source', 'rightsNode'):
             continue
-        extras[key] = value
+        extras[key] = value[0]
     #description = metadata['description'][0] if len(metadata['description']) else ''
     notes = ' '.join(metadata.get('description', []))
     pkg.notes = notes.replace('\n', ' ').replace('  ', ' ')
     if 'date' in extras:
         pkg.version = extras['date']
+        extras['modified'] = extras['date']
         del extras['date']
     pkg.extras = extras
     pkg.url = data['package_url']
