@@ -1,4 +1,4 @@
-'''
+"""
 Contains code to convert metadata dictionary into form that's stored in CKAN
 database. Harvester would get a record in import_stage and pass it to this
 for storing the actual data in the database.
@@ -6,7 +6,7 @@ for storing the actual data in the database.
 In retrospect, there should be a mapping of XML paths to package and extra
 fields/keys which should handle the parsing. This code will become unwieldy as
 more sources with minor variations are added. Repeatability should be known.
-'''
+"""
 
 import logging
 import traceback
@@ -19,11 +19,8 @@ from ckan.model.license import LicenseRegister, LicenseOtherPublicDomain
 from ckan.model.license import LicenseOtherClosed, LicenseNotSpecified
 from ckan.controllers.storage import BUCKET, get_ofs
 
-from lxml import etree
-
-import pprint
-
 log = logging.getLogger(__name__)
+
 
 def oai_dc2ckan(data, namespaces, group=None, harvest_object=None):
     try:
@@ -31,6 +28,7 @@ def oai_dc2ckan(data, namespaces, group=None, harvest_object=None):
     except Exception as e:
         log.debug(traceback.format_exc(e))
     return False
+
 
 # Annoyingly, attribute such as rdf:about is presented with key such as
 # {http://www.w3.org/1999/02/22-rdf-syntax-ns#}about so we have to check the
@@ -42,6 +40,7 @@ def _find_attribute(node, key_end):
             return node.get(key)
     return None
 
+
 # Given information about the license, try to match it with some known one.
 def _match_license(text):
     lr = LicenseRegister()
@@ -50,11 +49,11 @@ def _match_license(text):
             return lic.id
     return None
 
+
 def _handle_rights(nodes, namespaces):
     d = {}
     if len(nodes):
-        decls = nodes[0].xpath('./*[local-name() = "RightsDeclaration"]',
-            namespaces=namespaces)
+        decls = nodes[0].xpath('./*[local-name() = "RightsDeclaration"]', namespaces=namespaces)
         if len(decls):
             if len(decls) > 1:
                 # This is actually repeatable but not handled so thus far.
@@ -63,13 +62,13 @@ def _handle_rights(nodes, namespaces):
                 log.warning('Multiple RightsDeclarations in one record.')
             category = decls[0].get('RIGHTSCATEGORY')
             text = decls[0].text
-        else: # Probably just old-fashioned text.
+        else:  # Probably just old-fashioned text.
             text = nodes[0].text
-            category = 'LICENSED' # Let's give recognizing the license a try.
+            category = 'LICENSED'  # Let's give recognizing the license a try.
         if category == 'LICENSED' and text:
             lic = _match_license(text)
             if lic is not None:
-                d['package.license'] = { 'id':lic }
+                d['package.license'] = {'id': lic}
             else:
                 # Something unknown. Store text or license.
                 if text.startswith('http://') or text.startswith('https://'):
@@ -78,14 +77,15 @@ def _handle_rights(nodes, namespaces):
                     d['licenseText'] = text
         elif category == 'PUBLIC DOMAIN':
             lic = LicenseOtherPublicDomain()
-            d['package.license'] = { 'id': lic.id }
+            d['package.license'] = {'id': lic.id}
         elif category in ('CONTRACTUAL', 'OTHER',):
             lic = LicenseOtherClosed()
-            d['package.license'] = { 'id': lic.id }
+            d['package.license'] = {'id': lic.id}
         elif category == 'COPYRIGHTED':
             lic = LicenseNotSpecified()
-            d['package.license'] = { 'id': lic.id }
+            d['package.license'] = {'id': lic.id}
     return d
+
 
 def _handle_contributor(nodes, namespaces):
     d = {}
@@ -107,6 +107,7 @@ def _handle_contributor(nodes, namespaces):
         d['contributor'] = nodes[0].text
     return d
 
+
 def _handle_publisher(nodes, namespaces):
     d = {}
     person_idx = 0
@@ -120,14 +121,15 @@ def _handle_publisher(nodes, namespaces):
             phone = _find_attribute(ns[0], 'resource') if len(ns) else None
             if url:
                 d['contactURL_%i' % person_idx] = url
-            if phone and len(phone) > 5: # Filter out '-' and similar.
+            if phone and len(phone) > 5:  # Filter out '-' and similar.
                 d['phone_%i' % person_idx] = phone
-            if email and person_idx == 0: # Just keep first. The rest later?
+            if email and person_idx == 0:  # Just keep first. The rest later?
                 d['package.maintainer_email'] = email
             person_idx += 1
     if len(nodes) and len(d) == 0:
         d['publisher'] = nodes[0].text
     return d
+
 
 def _handle_format(nodes, namespaces):
     d = []
@@ -150,7 +152,7 @@ def _handle_format(nodes, namespaces):
                         algorithm = _find_attribute(a, 'about')
                     for v in ck.xpath('./fp:checksumValue', namespaces=namespaces):
                         checksum = v.text
-            rd = { 'url':url }
+            rd = {'url': url}
             if size is not None:
                 rd['size'] = size
             if checksum is not None:
@@ -160,13 +162,14 @@ def _handle_format(nodes, namespaces):
             d.append(rd)
     return d
 
+
 def _oai_dc2ckan(data, namespaces, group, harvest_object):
     model.repo.new_revision()
     identifier = data['identifier']
     metadata = data['metadata']
     # Store title in pkg.title and keep all in extras as well. That way
     # UI will work some way in any case.
-    title = metadata.get('title', identifier)
+    title = metadata.get('title', identifier)[0]
     #title = metadata['title'][0] if len(metadata['title']) else identifier
     name = data['package_name']
     pkg = Package.get(name)
@@ -189,21 +192,22 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
             if tagi.startswith('http://') or tagi.startswith('https://'):
                 extras['tag_source_%i' % idx] = tagi
                 idx += 1
-                tags = [] # URL tags break links in UI.
+                tags = []  # URL tags break links in UI.
             else:
-                tags = [ tagi ]
+                tags = [tagi]
             for tagi in tags:
-                tagi = tagi[:100] # 100 char limit in DB.
+                tagi = tagi[:100]  # 100 char limit in DB.
                 tag_obj = model.Tag.by_name(tagi)
                 if not tag_obj:
                     tag_obj = model.Tag(name=tagi)
                     tag_obj.save()
                 pkgtag = model.Session.query(model.PackageTag).filter(
-                    model.PackageTag.package_id==pkg.id).filter(
-                    model.PackageTag.tag_id==tag_obj.id).limit(1).first()
+                    model.PackageTag.package_id == pkg.id).filter(
+                        model.PackageTag.tag_id == tag_obj.id
+                    ).limit(1).first()
                 if pkgtag is None:
                     pkgtag = model.PackageTag(tag=tag_obj, package=pkg)
-                    pkgtag.save() # Avoids duplicates if tags have duplicates.
+                    pkgtag.save()  # Avoids duplicates if tags have duplicates.
     extras.update(
         _handle_contributor(metadata.get('contributorNode', []), namespaces))
     extras.update(
@@ -223,7 +227,16 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
     # The rest.
     # description below goes to pkg.notes. I think it should not added here.
     for key, value in metadata.items():
-        if value is None or len(value) == 0 or key in ('title', 'description', 'publisherNode', 'contributorNode', 'formatNode', 'identifier', 'source', 'rightsNode'):
+        if value is None or len(value) == 0 or key in (
+            'title',
+            'description',
+            'publisherNode',
+            'contributorNode',
+            'formatNode',
+            'identifier',
+            'source',
+            'rightsNode'
+        ):
             continue
         extras[key] = value[0]
     #description = metadata['description'][0] if len(metadata['description']) else ''
@@ -238,8 +251,7 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
     if 'package_resource' in data:
         try:
             ofs = get_ofs()
-            ofs.put_stream(BUCKET, data['package_xml_save']['label'],
-                data['package_xml_save']['xml'], {})
+            ofs.put_stream(BUCKET, data['package_xml_save']['label'], data['package_xml_save']['xml'], {})
             pkg.add_resource(**(data['package_resource']))
         except KeyError:
             pass
@@ -263,9 +275,9 @@ def _oai_dc2ckan(data, namespaces, group, harvest_object):
             # The end of the URL must be the format, otherwise it will use "html" by default
             infer_format = default_format
 
-            for format in available_formats:
-                if ids.endswith(format):
-                    infer_format = format
+            for ext in available_formats:
+                if ids.endswith(ext):
+                    infer_format = ext
 
             pkg.add_resource(ids, name=pkg.title, format=infer_format)
     # All belong to the main group even if they do not belong to any set.
