@@ -33,7 +33,6 @@ For this source do:
 
 * Fill in URL to a OAI-PMH repository.
 * Select 'Source Type' to be 'OAI-PMH'.
-* In configuration, you must add your selected sets that should be imported.
 * Click save
 
 The OAI-PMH harvester support a number of configuration options to control their behaviour. Those need to be defined as a JSON object in the configuration form field. The currently supported configuration options are:
